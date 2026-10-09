@@ -1,0 +1,41 @@
+services:
+  source-db:
+    image: postgres:16 # докер скачает на образ 16ю версию постгреса
+    environment:
+      POSTGRES_USER: src
+      POSTGRES_PASSWORD: src
+      POSTGRES_DB: source
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql # это пробросить файл с моего ноута в контейнер
+    ports:
+      - "5433:5432"
+
+  target-db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tgt
+      POSTGRES_PASSWORD: tgt
+      POSTGRES_DB: target
+    ports:
+      - "5434:5432"
+
+  airflow:
+    image: apache/airflow:2.10.5
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false" # не загружать десятки демонстрационных DAG'ов, чтобы в списке был только мой
+    command: >
+      bash -c "airflow db migrate &&
+      (airflow users create --username admin --password admin --firstname a --lastname a --role Admin --email a@a.com || true) &&
+      (airflow connections add source_db --conn-uri postgresql://src:src@source-db:5432/source || true) &&
+      (airflow connections add target_db --conn-uri postgresql://tgt:tgt@target-db:5432/target || true) &&
+      (airflow scheduler &) && airflow webserver"
+
+# первое создаёт таблицы во внутренней базе Airflow (по умолчанию это файл SQLite внутри контейнера)
+# второе создаёт пользователя admin с паролем admin, чтобы я могла зайти в веб-интерфейс Airflow
+# третье и четвёртое создают подключения к базам данных source и target, чтобы я могла использовать их в своих DAG'ах
+# пятое запускает планировщик Airflow в фоне, чтобы он мог запускать DAG'и по расписанию
+# шестое запускает веб-сервер Airflow, чтобы я могла зайти в веб-интерфейс и управлять DAG'ами
